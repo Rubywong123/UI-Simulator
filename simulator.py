@@ -14,6 +14,8 @@ import logging
 from utils import *
 import re
 from typing import Optional
+import functools
+import inspect
 
 STATIC_ELEMENT = {
     "text",
@@ -22,12 +24,35 @@ STATIC_ELEMENT = {
     "RootWebArea"
 }
 
+def sim_logger(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if getattr(self, "debug", False):
+            arg_names = inspect.getfullargspec(func).args[1:]  # skip self
+            arg_dict = {name: val for name, val in zip(arg_names, args)}
+            arg_dict.update(kwargs)
+
+            self.logger.info(
+                f"[CALL] {func.__name__} | args={arg_dict}"
+            )
+
+        output = func(self, *args, **kwargs)
+
+        if getattr(self, "debug", False):
+            self.logger.info(
+                f"[RETURN] {func.__name__} | output={output}"
+            )
+
+        return output
+    return wrapper
+
 ####################################
 ########## Web Simulator ##########
 ####################################
 
 class Simulator:
     def __init__(self,
+                 teacher_model = 'gpt-4o-mini',
                  init_state=None,
                  width=1920,
                  height=1080,
@@ -38,7 +63,7 @@ class Simulator:
             organization=os.environ['OPENAI_ORG_ID'],
             api_key=os.environ['OPENAI_API_KEY']
         )
-
+        self.model = teacher_model
         self.init_state = init_state
 
         self.cur_state = None
@@ -66,29 +91,32 @@ class Simulator:
 
         # logging module
         self.debug = debug
-        if debug:
-            logging.basicConfig(level=logging.INFO,
-                                filemode='w',
-                                filename='tmp/simulator.log',
-                                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            self.logger = logging.getLogger(__name__)
+        logger = logging.getLogger("simulator")
+
+        if debug and not logger.handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                filemode="a",
+                filename="tmp/simulator.log",
+                format="%(asctime)s - %(levelname)s - %(message)s"
+            )
+
+        self.logger = logger
 
     def call_openai(self,
                     prompt, 
                     sys_prompt, 
-                    model="gpt-4o-mini",
+                    model=None,
                     stop=None, 
                     return_json=False,
-                    max_tokens=None,
-                    temperature=0.5):
+                    temperature=1):
         completion = self.client.chat.completions.create(
-            model=model,
+            model=model if model else self.model,
             messages=[
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": prompt}
             ],
             response_format={ "type": "json_object" } if return_json else openai.NOT_GIVEN,
-            max_tokens=max_tokens,
             stop=stop,
             temperature=temperature
         )
@@ -362,7 +390,7 @@ class Simulator:
         
         return state
 
-    
+    @sim_logger
     @timer
     def extract_intent(self, action):
         with open('system_prompts/web_simulation/intention_prompt.txt', 'r') as f:
@@ -398,7 +426,7 @@ Related elements:
             self.logger.info(f"Extracted intent: {response}")
         return response
     
-    
+    @sim_logger
     @timer
     def direct_update(self, intent):
         prompt = """
@@ -413,20 +441,20 @@ Update Message: {}""".format(self._get_backup_current_state(), intent)
 
         return response
     
-    
+    @sim_logger
     @timer
     def compose(self, intent, prev_state, polish = True):
         with open('system_prompts/web_simulation/compose_prompt.txt', 'r') as f:
             sys_prompt = f.read()
         prompt = '''Previous Info: {}\n{}\nNote: Don't generate duplicate things! just put the elements and sections in the order that they shall appear in the webpage. E.g. you don't want to put footer before main content.\nThought: Let's think step by step. The description is'''.format('\n'.join(self.key_infos), intent.replace('New window', 'Descrition'))
-        response = self.call_openai(prompt, sys_prompt, model='gpt-4o-mini')
+        response = self.call_openai(prompt, sys_prompt)
         
         # further diversify the response
         if polish:
             with open('system_prompts/web_simulation/polish_compose.txt', 'r') as f:
                 sys_prompt = f.read()
             prompt = '''Previous page:{}\nOld content:{}\n Thought: Let's think step by step. '''.format(prev_state, response)
-            response = self.call_openai(prompt, sys_prompt, model='gpt-4o-mini', temperature=0.5)
+            response = self.call_openai(prompt, sys_prompt)
             try:
                 response = response.split("New content:")[1].strip()
             except:
@@ -435,7 +463,7 @@ Update Message: {}""".format(self._get_backup_current_state(), intent)
             self.logger.info(f"Composed state: {response}")
         return response
     
-    
+    @sim_logger
     @timer
     def format(self, composition, prev_state):
         path = 'system_prompts/web_simulation/format_prompt.txt' if not self.webarena_mode else 'system_prompts/web_simulation/webarena_format_prompt.txt'
@@ -475,7 +503,7 @@ Update Message: {}""".format(self._get_backup_current_state(), intent)
 
         return state
     
-    
+    @sim_logger
     def create_new_page(self, cur_state, intent, polish=True):
         if polish:
             cur_state = self.erase_coord_info_in_tree(cur_state, duplicate=True)
@@ -718,13 +746,14 @@ Update Message: {}""".format(self._get_backup_current_state(), intent)
 class RAG_Simulator(Simulator):
     def __init__(self,
                  webarena_domain,
+                 teacher_model='gpt-4o-mini',
                  init_state=None,
                  width=1920,
                  height=1080,
                  webarena_mode=False,
                  debug=False,
                  ):
-        super().__init__(init_state, width, height, webarena_mode, debug)
+        super().__init__(teacher_model, init_state, width, height, webarena_mode, debug)
         self.webarena_domain = webarena_domain
         self.retrieve_key = None
 
@@ -802,6 +831,7 @@ class RAG_Simulator(Simulator):
         best_match = json.load(open(f'{root}/{filtered_files[top_indices_final[0]]}', 'r'))
         return best_match
     
+    @sim_logger
     @timer
     def rag_compose(self, intent, reference_state):
         path = 'system_prompts/web_simulation/rag_compose_prompt.txt'
@@ -811,6 +841,7 @@ class RAG_Simulator(Simulator):
         response = self.call_openai(prompt, sys_prompt)
         return response
 
+    @sim_logger
     @timer
     def format(self, composition, reference_state):
         path = 'system_prompts/web_simulation/rag_format_prompt.txt'
@@ -819,7 +850,8 @@ class RAG_Simulator(Simulator):
         prompt = f"""Reference state:\n{reference_state}\nDescription of new state: {composition}"""
         response = self.call_openai(prompt, sys_prompt, return_json=True)
         return response
-
+    
+    @sim_logger
     def create_new_page(self, WA_reference_state, intent):
 
         composition = self.rag_compose(intent, WA_reference_state)
@@ -1056,7 +1088,6 @@ class AndroidSimulator:
                     model="gpt-4o-mini",
                     stop=None, 
                     return_json=False,
-                    max_tokens=None,
                     temperature=0.5):
         completion = self.client.chat.completions.create(
             model=model,
@@ -1065,7 +1096,6 @@ class AndroidSimulator:
                 {"role": "user", "content": prompt}
             ],
             response_format={ "type": "json_object" } if return_json else openai.NOT_GIVEN,
-            max_tokens=max_tokens,
             stop=stop,
             temperature=temperature
         )

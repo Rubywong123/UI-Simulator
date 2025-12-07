@@ -180,7 +180,7 @@ def timer(func):
     return wrapper
 
 
-def call_llm(prompt, sys_prompt, model='gpt-4o-mini', stop=None, return_json=False, max_tokens=None, temperature=0.5):
+def call_llm(prompt, sys_prompt, model='gpt-4o-mini', stop=None, return_json=False, temperature=1):
     client = OpenAI(
         organization=os.environ['OPENAI_ORG_ID'],
         api_key=os.environ['OPENAI_API_KEY']
@@ -192,7 +192,6 @@ def call_llm(prompt, sys_prompt, model='gpt-4o-mini', stop=None, return_json=Fal
             {"role": "user", "content": prompt}
         ],
         response_format={ "type": "json_object" } if return_json else openai.NOT_GIVEN,
-        max_tokens=max_tokens,
         stop=stop,
         temperature=temperature
     )

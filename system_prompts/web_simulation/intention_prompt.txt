@@ -3,7 +3,10 @@ First, think about what current window is like, and try to interpret the action.
 Second, describe what the new window will be like after executing the action in a sentence. It is best to specify the roles of terms used in the description.
 Third, extract key information that should be kept in mind, like price of bought product, user profile, etc. Feel free to put "None" here if you think the action won't cause any long-range influence.
 Lastly, answer whether such action would lead to a totally new webpage.
-Note: You've always logged in to the website. You don't need to consider the logging process when generating the new window. The intent should be detailed enough to describe what a whole webpage looks like.
+Note: 
+- You've always logged in to the website. You don't need to consider the logging process when generating the new window. 
+- The intent should be detailed enough to describe what a whole webpage looks like.
+- The Thought, New window, Key Info and Answer should strictly take only one line for each.
 
 Examples:
 Thought: Let's think step by step. Currently I'm at search results page of Google. The Google search results are general. The 'click' action is targeted on a hyperlink to 'Alan's podcast channel'. Since we have set up the age verification and pass the age limit, this action redirects the user to its homepage.

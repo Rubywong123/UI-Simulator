@@ -108,17 +108,17 @@ def get_init_states(domain='shopping'):
 ###### Guide related functions ######
 ############################################
 
-def judge_missed_entity(guide):
+def judge_missed_entity(model, guide):
     # check if guide is search task or not
     with open('system_prompts/web_data_collection/judge_missed_entity.txt', 'r') as f:
         sys_prompt = f.read()
     prompt = '''
 Original task: {}'''.format(guide)
-    response = call_llm(prompt, sys_prompt)
+    response = call_llm(prompt, sys_prompt, model)
     return "Yes" in response or "yes" in response
 
-def general_entity(a11y_tree, guide):
-    description = describe_state(a11y_tree)
+def propose_general_entity(model, a11y_tree, guide):
+    description = describe_state(model, a11y_tree)
     # print(description)
     # general entity
     with open('system_prompts/web_data_collection/general_entity.txt', 'r') as f:
@@ -129,15 +129,15 @@ Website description:
 Original task:
 {}
     '''.format(description, guide)
-    response = call_llm(prompt, sys_prompt)
+    response = call_llm(prompt, sys_prompt, model)
     guide = re.split(r'(?i)tasks:', response)[1].strip().split('\n')
     guide = [line.split('. ', 1)[1].strip() for line in guide if line]
     # print(guide)
     guide = random.sample(guide, 1)[0]
     return guide
 
-def specify_entity(a11y_tree, guide):
-    description = describe_state(a11y_tree)
+def specify_entity(model, a11y_tree, guide):
+    description = describe_state(model=model, a11y_tree=a11y_tree)
     # print(description)
     # specific entity
     with open('system_prompts/web_data_collection/specific_entity.txt', 'r') as f:
@@ -148,7 +148,8 @@ Website description:
 Original task:
 {}
 Thought: I'll try to'''.format(description, guide)
-    response = call_llm(prompt, sys_prompt)
+    print(response)
+    response = call_llm(prompt, sys_prompt, model)
     guide = re.split(r'(?i)tasks:', response)[1].strip().split('\n')
     guide = [line.split('. ', 1)[1].strip() for line in guide if line and line[0].isdigit()]
     # print(guide)
@@ -184,7 +185,7 @@ def divide_state(a11y_tree):
 
     return result
 
-def preprocess_state(description, elements):
+def preprocess_state(model, description, elements):
     with open('system_prompts/web_data_collection/filter_elements.txt', 'r') as f:
         system_prompt = f.read()
     prompt = """
@@ -194,7 +195,7 @@ Elements:
 {}
     """.format(description, elements)
     # print(prompt)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     # print(response)
     elements = response.split("##Elements:")[1].strip()
     # elements = elements.split('\n')
@@ -210,21 +211,21 @@ Elements:
         
     return elements
 
-def describe_state(a11y_tree):
+def describe_state(model, a11y_tree):
     with open('system_prompts/web_data_collection/webpage_description.txt', 'r') as f:
         system_prompt = f.read()
     prompt = """
 webpage: 
 {}
     """.format(a11y_tree)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     # print(response)
     lines = response.splitlines()
     if lines[-1] == "None":
         lines = lines[:-1]
     return "\n".join(lines)
 
-def judge_guide_completion(guide, prev_steps, prev_state, cur_state):
+def judge_guide_completion(model, guide, prev_steps, prev_state, cur_state):
     invariant_elements, new_elements = split_state(prev_state, cur_state)
     with open('system_prompts/web_data_collection/judge_guide_completion.txt', 'r') as f:
         system_prompt = f.read()
@@ -238,7 +239,7 @@ Invariant elements:
 Newly appeared elements:
 {}
     """.format(guide, prev_steps, invariant_elements, new_elements)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     try:
         answer = response.split("Answer:")[1]
         return "Yes" in answer or "yes" in answer
@@ -256,7 +257,8 @@ defective action string: {}
     action = response.split("Action: ")[1]
     return action
 
-def task_guidance(cur_state: str,
+def task_guidance(model,
+                  cur_state: str,
                   prev_state: str = None,
                   prev_guide = None, 
                   prev_step = None, 
@@ -303,7 +305,7 @@ Previous steps:
 '''.format('\n'.join(invariant_elements), '\n'.join(new_elements), prev_guide, prev_step)
         prompt += "Thought: Let's think step by step."
     
-    response = call_llm(prompt, sys_prompt)
+    response = call_llm(prompt, sys_prompt, model)
     print("Thought response")
     print(response)
     
@@ -330,14 +332,14 @@ Previous steps:
 ###### Reasoning related functions ######
 ############################################
 
-def propose_reasoning_tasks(cur_state):
+def propose_reasoning_tasks(model, cur_state):
     with open('system_prompts/web_data_collection/reasoning_guide.txt', 'r') as f:
         system_prompt = f.read()
 
     prompt = """
 Webpage: {}
 Thought: Let's think step by step. """.format(cur_state)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     print("response:", response)
     try:
         thought, questions = response.split("Questions:")
@@ -352,7 +354,7 @@ Thought: Let's think step by step. """.format(cur_state)
     return questions
     
 
-def judge_reasoning(high_level_intent, step_history):
+def judge_reasoning(model, high_level_intent, step_history):
     with open('system_prompts/web_data_collection/judge_reasoning.txt', 'r') as f:
         system_prompt = f.read()
     prompt = """
@@ -360,12 +362,12 @@ Original task guide: {}
 Browsing history:
 {}
 """.format(high_level_intent, '\n'.join(step_history))
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     print(response)
     return "Yes" in response or "yes" in response
 
     
-def answer_question(cur_state, question):
+def answer_question(model, cur_state, question):
 
     with open('system_prompts/element_select_example/analysis_state_example_webarena.json', 'r') as f:
         info_analysis_example_state = json.load(f)
@@ -377,7 +379,7 @@ def answer_question(cur_state, question):
 Webpage: {}
 Question: {}
 """.format(cur_state, question)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     print(response)
     try:
         explanation, answer = [l for l in response.split('\n') if l != '']
@@ -391,13 +393,13 @@ Question: {}
     explanation = explanation + f" The action I'll take is `stop [{answer}]`."
     return explanation, answer
 
-def pre_reasoning(high_level_intent, step_history):
+def pre_reasoning(model, high_level_intent, step_history):
     with open('system_prompts/web_data_collection/pre-reasoning_summarize.txt', 'r') as f:
         system_prompt = f.read()
     prompt = """Input:
 High Level intent: {}
 Step history: {}""".format(high_level_intent, step_history)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     pre_reasoning, instruction = response.split("Instruction:")
     pre_reasoning = pre_reasoning.split("Thought:")
     print("pre reasoning:", pre_reasoning)
@@ -408,7 +410,7 @@ Step history: {}""".format(high_level_intent, step_history)
 ############################################
 ###### Thought related functions ######
 ############################################
-def analysis_thought(state, step_history):
+def analysis_thought(model, state, step_history):
     with open('system_prompts/element_select_example/analysis_state_example_webarena.json', 'r') as f:
         info_analysis_example_state = json.load(f)
         info_analysis_example_state = json.dumps(info_analysis_example_state)
@@ -422,10 +424,10 @@ Previous steps:
 {}
 
 Thought: Let's think step by step. """.format(state, step_history)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     return response
 
-def rephrase_thought(intent, thought_history, action_history):
+def rephrase_thought(model, intent, thought_history, action_history):
     with open('system_prompts/web_data_collection/rephrase_thought_webarena.txt', 'r') as f:
         sys_prompt = f.read()
     prompt = '''
@@ -437,7 +439,7 @@ Actions: {}
 
 Rewritten thoughts:
 '''.format(thought_history, intent, ', '.join(action_history))
-    response = call_llm(prompt, sys_prompt)
+    response = call_llm(prompt, sys_prompt, model)
     try:
         thought_list = ast.literal_eval(response)
     except:
@@ -467,7 +469,7 @@ def align_thought_action(action_traj, new_thought_traj):
 ############################################
 ###### Main exploration functions ######
 ############################################
-def trajectory_eval(instruction, step_history):
+def trajectory_eval(model, instruction, step_history):
     with open('system_prompts/web_data_collection/trajectory_evaluation.txt', 'r') as f:
         system_prompt = f.read()
     prompt = """
@@ -476,10 +478,10 @@ Instruction:
 Steps:
 {}
 """.format(instruction, '\n'.join(step_history))
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     return "Yes" in response or "yes" in response
 
-def task_summarize(step_history, general_flag):
+def task_summarize(model, step_history, general_flag):
     # trajectory summarize intent
     if not general_flag:
         with open('system_prompts/web_data_collection/summarize_prompt.txt', 'r') as f:
@@ -493,7 +495,7 @@ Previous steps: {}
 
 Thought:
     """.format(step_history)
-    response = call_llm(prompt, system_prompt)
+    response = call_llm(prompt, system_prompt, model)
     print("high level task:", response)
     try:
         high_level_task = response.split("Task: ")[1]
@@ -504,7 +506,7 @@ Thought:
     
     return high_level_task.strip()
 
-def thought_action_gen(domain, state, guide, step_history, early_stop=False):
+def thought_action_gen(model, domain, state, guide, step_history, early_stop=False):
 
     converter = WebArenaConverter()
     if isinstance(state, list):
@@ -525,7 +527,7 @@ Previous steps: {}\n'''.format(guide, state, step_history)
         stop_guide = """**If you think the guide has been completed, and you want to finish the current browsing process, put "stop []" in "Action" field, or put "stop [unachievable]" if you think the task cannot be completed, and None in "Task" field.**\n"""
         prompt += stop_guide
 
-    response = call_llm(prompt, sys_prompt)
+    response = call_llm(prompt, sys_prompt, model)
     print(response + "\n")
     
     action, thought, task = "", "", ""
@@ -539,6 +541,7 @@ Previous steps: {}\n'''.format(guide, state, step_history)
 @timer
 def webarena_sim_traj(init_state: dict, 
                       domain: str,
+                      teacher_model, 
                       guide, 
                       num_guides_per_step=5,
                       min_step=3, 
@@ -548,13 +551,17 @@ def webarena_sim_traj(init_state: dict,
                       save=True,
                       webarena_obs_format=True,
                       rag_enabled=False,
-                      general_entity=0.5):
+                      general_entity=0.5,
+                      debug=False):
     if rag_enabled:
         print("####RAG enabled####")
-        simulator = RAG_Simulator(webarena_domain=domain, webarena_mode=True)
+        simulator = RAG_Simulator(teacher_model = teacher_model, webarena_domain=domain, webarena_mode=True, debug=debug)
     else:
         print("####RAG disabled####")
-        simulator = Simulator(webarena_mode=True)
+        simulator = Simulator(teacher_model = teacher_model, webarena_mode=True, debug=debug)
+
+    if debug:
+        logger = logging.getLogger("simulator")
     simulator.reset(init_state)
     converter = WebArenaConverter()
     trajectory = []
@@ -572,15 +579,15 @@ def webarena_sim_traj(init_state: dict,
     general_flag = False
 
     # check if guide is search related
-    result = judge_missed_entity(guide)
+    result = judge_missed_entity(teacher_model, guide)
     
     if result:
         a11y_tree = converter.convert_tree_venv_to_real_env(init_state)
         if random.random() < general_entity:
-            guide = general_entity(a11y_tree, guide)
+            guide = propose_general_entity(teacher_model, a11y_tree, guide)
             general_flag = True
         else:
-            guide = specify_entity(a11y_tree, guide)
+            guide = specify_entity(teacher_model, a11y_tree, guide)
     
     print("********" + str(guide) + "********")
     guides.append(guide)
@@ -603,7 +610,7 @@ def webarena_sim_traj(init_state: dict,
         # generate thought and action at current step
         print("guide for thought action generation:", guide)
         try:
-            thought, action, task = thought_action_gen(domain, state, guide, step_history, early_stop)
+            thought, action, task = thought_action_gen(teacher_model, domain, state, guide, step_history, early_stop)
         except:
             error = True
             retry += 1
@@ -684,7 +691,7 @@ def webarena_sim_traj(init_state: dict,
                     depths = simulator._get_depths(simulator._get_backup_current_state())
                     WA_prev_state = converter.convert_flat_tree_venv_to_real_env(prev_state, depths)
                 if isinstance(action, WA_Scroll):
-                    analysis = analysis_thought(simulator.cur_state, step_history)
+                    analysis = analysis_thought(teacher_model, simulator.cur_state, step_history)
                     step_thought = "Let's think step by step. " + analysis + f"I think the content I want is not appearing in current window, but it should be on the current webpage. So I'll scroll down to find more information. In summary, the next action I will perform is scroll [{action.direction}]"
                     step_task = f"Scroll {action.direction} the current page to find more information on the page."
                 else:
@@ -692,6 +699,8 @@ def webarena_sim_traj(init_state: dict,
                     step_task = task
 
                 # RAG: simulate next state with action history
+                if debug:
+                    logger.info(f"[TRAJ] Step {i}, Action: {action}, Thought: {step_thought}, Task: {step_task}")
                 if rag_enabled:
                     if not isinstance(action, WA_Scroll):
                         try:
@@ -747,7 +756,7 @@ def webarena_sim_traj(init_state: dict,
             if not isinstance(action, WA_Scroll):
                 # check if general guide is completed
                 cur_state = converter.convert_tree_venv_to_real_env(simulator.erase_coord_info_in_tree(simulator._get_backup_current_state(), duplicate=True))
-                completion = judge_guide_completion(guide, step_history, prev_a11y_tree_state, cur_state)
+                completion = judge_guide_completion(teacher_model, guide, step_history, prev_a11y_tree_state, cur_state)
                 print("check guide completion:", completion)
                 
                 # generate task guide if guide is completed
@@ -757,7 +766,7 @@ def webarena_sim_traj(init_state: dict,
 
                     # generate task guide if guide is completed
                     if completion:
-                        tmp = task_guidance(a11y_tree_state, prev_a11y_tree_state, guide, step_history, first_guide=False, num_guides=num_guides_per_step)
+                        tmp = task_guidance(teacher_model, a11y_tree_state, prev_a11y_tree_state, guide, step_history, first_guide=False, num_guides=num_guides_per_step)
                         print("next step guides")
                         print(tmp)
                         if len(tmp) > 0:
@@ -778,7 +787,7 @@ def webarena_sim_traj(init_state: dict,
     if early_stop_flag:
         stop_thought = early_stop_thought
     else:
-        analysis = analysis_thought(simulator.cur_state, step_history)
+        analysis = analysis_thought(teacher_model, simulator.cur_state, step_history)
         # print("###### analysis ######")
         # print(analysis)
         # print("############")
@@ -800,7 +809,7 @@ def webarena_sim_traj(init_state: dict,
     for t, s in zip(thought_action_traj, tmp_step_history):
         s = t['Action'] + ": " + s
 
-    high_level_intent = task_summarize(tmp_step_history, general_flag)
+    high_level_intent = task_summarize(teacher_model, tmp_step_history, general_flag)
     thought_traj = [f"Thought {i+1}: " + d['Thought'] for i, d in enumerate(thought_action_traj)]
     action_traj = [d['Action'] for d in thought_action_traj]
     
@@ -812,7 +821,7 @@ def webarena_sim_traj(init_state: dict,
         #     return None
 
         # rewrite the thought according to the high-level intent
-        new_thought_traj = rephrase_thought(high_level_intent, thought_traj, action_traj)
+        new_thought_traj = rephrase_thought(teacher_model, high_level_intent, thought_traj, action_traj)
 
         # DOUBLE CHECK if rephrasing thought also change the original action
         keep_traj = align_thought_action(action_traj, new_thought_traj)
@@ -862,7 +871,7 @@ def webarena_sim_traj(init_state: dict,
                 step_history.pop()
 
             # 1. check whether a reasoning step is needed
-            do_reasoning = judge_reasoning(high_level_intent, step_history)
+            do_reasoning = judge_reasoning(teacher_model, high_level_intent, step_history)
 
             if do_reasoning:
                 # 2. generate reasoning tasks based on the current state
@@ -870,17 +879,17 @@ def webarena_sim_traj(init_state: dict,
                 if webarena_obs_format:
                     terminal_state = converter.convert_tree_venv_to_real_env(terminal_state)
                 
-                post_reasoning_tasks = propose_reasoning_tasks(terminal_state)
+                post_reasoning_tasks = propose_reasoning_tasks(teacher_model, terminal_state)
                 print("reasoning_task: ", post_reasoning_tasks)
 
                 for i, post_reasoning_task in enumerate(post_reasoning_tasks):
-                    explanation, answer = answer_question(terminal_state, post_reasoning_task)
+                    explanation, answer = answer_question(teacher_model, terminal_state, post_reasoning_task)
             
                     if 'None' not in answer:
                         post_reasoning_instruction = post_reasoning_task.strip()
                         traj_answer = answer.strip()
                         if save:
-                            new_thought_traj = rephrase_thought(post_reasoning_instruction, thought_traj, action_traj)
+                            new_thought_traj = rephrase_thought(teacher_model, post_reasoning_instruction, thought_traj, action_traj)
 
                             # DOUBLE CHECK if rephrasing thought also change the original action
                             keep_traj = align_thought_action(action_traj, new_thought_traj)
@@ -889,7 +898,7 @@ def webarena_sim_traj(init_state: dict,
                                 continue
 
                             new_traj = replace_thought(trajectory, new_thought_traj)
-                            analysis = analysis_thought(simulator.get_visible_elements(simulator._get_backup_current_state()), step_history)
+                            analysis = analysis_thought(teacher_model, simulator.get_visible_elements(simulator._get_backup_current_state()), step_history)
 
                             new_traj[-1] = (terminal_state, f"Let's think step by step. {analysis} I think I'm ready to answer the question: {post_reasoning_instruction}. {explanation}", f"stop [{traj_answer}]", "stop", new_traj[-1][4])
                             thought_action_traj[-1]['Action'] = f"stop [{traj_answer}]"
@@ -923,7 +932,7 @@ def webarena_sim_traj(init_state: dict,
 ############################################
 ###### Data collection functions ######
 ############################################
-def process_sim_collect(init_state, domain, guides, num_guides_per_step, min_step=3, max_step=5, index=1, save=True, rag_enabled=False):
+def process_sim_collect(init_state, domain, teacher_model, guides, num_guides_per_step, min_step=3, max_step=5, index=1, save=True, rag_enabled=False):
     # print(guides)
     
     num = len(guides)
@@ -934,6 +943,7 @@ def process_sim_collect(init_state, domain, guides, num_guides_per_step, min_ste
             webarena_sim_traj,
             [init_state] * num,
             [domain] * num,
+            [teacher_model] * num,
             guides,
             [num_guides_per_step] * num,
             [min_step] * num,
@@ -947,7 +957,7 @@ def process_sim_collect(init_state, domain, guides, num_guides_per_step, min_ste
 
     return results
         
-def collect(domain, init_states, num_guides_per_step, min_length_range: list, nums: list, debug=False, rag_enabled=True):
+def collect(domain, teacher_model, init_states, num_guides_per_step, min_length_range: list, nums: list, debug=False, rag_enabled=True):
 
     if debug:
         min_step = min_length_range[0]
@@ -963,7 +973,7 @@ def collect(domain, init_states, num_guides_per_step, min_length_range: list, nu
             # convert the state into a11y tree
             converter = WebArenaConverter()
             a11y_tree = converter.convert_tree_venv_to_real_env(state)
-            tasks = task_guidance(a11y_tree, num_guides = num_guides_per_step, domain=domain)
+            tasks = task_guidance(teacher_model, a11y_tree, num_guides = num_guides_per_step, domain=domain)
             print(tasks)
 
         guide = random.sample(tasks, 1)[0]
@@ -971,7 +981,7 @@ def collect(domain, init_states, num_guides_per_step, min_length_range: list, nu
         # guide = 'Fork a project named chatgpt'
         
         for i in range(nums[0]):
-            webarena_sim_traj(init_states[0], domain, guide, num_guides_per_step, min_step=min_step, max_step=min_step+6, index=1000, num=i, save=True, general_entity=.0, rag_enabled=rag_enabled)
+            webarena_sim_traj(init_states[0], domain, teacher_model, guide, num_guides_per_step, min_step=min_step, max_step=min_step+6, index=1000, num=i, save=True, general_entity=.0, rag_enabled=rag_enabled, debug=debug)
 
     else:
         # Propose first-step guides
@@ -1009,6 +1019,7 @@ def collect(domain, init_states, num_guides_per_step, min_length_range: list, nu
                     process_sim_collect,
                     filtered_init_states,
                     [domain] * len(filtered_init_states),
+                    [teacher_model] * len(filtered_init_states),
                     sampled_guides,
                     [num_guides_per_step] * len(filtered_init_states),
                     [l] * len(filtered_init_states),
@@ -1036,6 +1047,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--domain', type=str, choices=['shopping', 'gitlab', 'reddit', 'map', 'shopping_admin'])
+    parser.add_argument('--teacher_model', type=str, help='The teacher model used for simulation and traj collection')
     parser.add_argument('--rag_enabled', action='store_true')
     parser.add_argument('--min_steps', type=int, default=1, nargs='+')
     parser.add_argument('--nums', type=int, default=10, nargs='+')
@@ -1049,4 +1061,4 @@ if __name__ == '__main__':
         args.nums = [args.nums]
     init_states = get_init_states(args.domain)
 
-    collect(args.domain, init_states, args.num_guides_per_step, args.min_steps, args.nums, debug=args.debug, rag_enabled=args.rag_enabled)
+    collect(args.domain, args.teacher_model, init_states, args.num_guides_per_step, args.min_steps, args.nums, debug=args.debug, rag_enabled=args.rag_enabled)

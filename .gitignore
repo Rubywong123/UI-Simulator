@@ -4,3 +4,4 @@ training
 intermediate_states
 init_states
 **.DS_Store
+.vscode
